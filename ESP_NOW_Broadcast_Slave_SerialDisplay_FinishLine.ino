@@ -20,17 +20,23 @@
 
 long startTimeMillis;
 bool gateOpen = true;
-bool raceActive = false;
-long lane1EndTime;
-bool lane1Active;
-long lane2EndTime;
-bool lane2Active;
 
 /* Definitions */
 #define ESPNOW_WIFI_CHANNEL 6
 
 #define SCL0_Pin 19
 #define SDA0_Pin 20
+
+#define AT_GATE 0
+#define RACING 1
+#define FINISHED 2
+#define RELOADING 3
+#define LANES 2
+
+int laneStatus[LANES];
+long elapsedTime[LANES];
+int breakBeamPin[LANES] = {4, 5};
+bool scoresReported = false;
 
 /* Classes */
 
@@ -62,9 +68,10 @@ public:
     if (strcmp(buffer, "START_GATE_OPENED") == 0) {
       startTimeMillis = millis();
       gateOpen = true;
-      raceActive = true;
-      lane1Active = true;
-      lane2Active = true;
+      scoresReported = false;
+      for (int i=0 ; i < LANES ; i++) {
+        laneStatus[i] = RACING;
+      }
       Serial.println("race START");
     } else if (strcmp(buffer, "START_GATE_CLOSED") == 0) {
       // this must be true to start the race
@@ -156,34 +163,44 @@ String getDefaultMacAddress() {
   ESP_NOW.onNewPeer(register_new_master, NULL);
 
   Serial.println("Setup complete. Waiting for a master to broadcast a message...");
+
+  for (int i=0 ; i < LANES ; i++) {
+    laneStatus[i] = AT_GATE;
+  }
 }
 
 void loop() {
-  int beam1 = analogRead(4);
-  if ((beam1 < 1000) && (lane1Active)) {
-    lane1Active = false;
-    Serial.print("beam1 BROKEN: "); Serial.println(beam1);
-    long now = millis();
-    lane1EndTime = now - startTimeMillis;
-    Serial.print("now: "); Serial.println(now);
-    Serial.print("startTimeMillis: "); Serial.println(startTimeMillis);
-    Serial.print("Lane1 ET: "); Serial.println(lane1EndTime);
-    Serial.println();
-  }
-  
-  int beam2 = analogRead(5);
-  if ((beam2 < 1000) && (lane2Active)) {
-    lane2Active = false;
-    Serial.print("beam2 BROKEN: "); Serial.println(beam2);
-    long now = millis();
-    lane2EndTime = now - startTimeMillis;
-    Serial.print("now: "); Serial.println(now);
-    Serial.print("startTimeMillis: "); Serial.println(startTimeMillis);
-    Serial.print("Lane2 ET: "); Serial.println(lane2EndTime);
-    Serial.println();
+  // check the break beam pins for cars crossing the finish line
+  for (int i=0 ; i < LANES ; i++) {
+    if ((analogRead(breakBeamPin[i]) < 1000) && (laneStatus[i] == RACING)) {
+      laneStatus[i] = FINISHED;
+      // Serial.print("Lane "); Serial.print(i); Serial.println(" FINISHED");
+      long now = millis();
+      elapsedTime[i] = now - startTimeMillis;
+      // Serial.print("Time: "); Serial.println(elapsedTime[i] / 1000.0);
+      // Serial.println();
+    }
   }
 
-  // monitor break-beam sensors, record break times per lane
-  // know when race is over
-  // delay(1000);
+  // check to see if all cars crossed the finish line
+  bool allFinished = false;
+  int finishedLanes = 0;
+  for (int i=0 ; i < LANES ; i++) {
+    if (laneStatus[i] == FINISHED) {
+      finishedLanes++;
+    }
+  }
+  if (finishedLanes == LANES) { // all lanes are in FINISHED state
+    allFinished = true;
+  }
+
+  if ((allFinished) && (scoresReported == false)) { // report scores
+    for (int i=0 ; i < LANES ; i++) {
+      Serial.print("Lane: "); Serial.print(i+1); Serial.print(", Time: "); Serial.print(elapsedTime[i] / 1000.0); Serial.println("s");
+    }
+    scoresReported = true;
+  }
+
+
+
 }
