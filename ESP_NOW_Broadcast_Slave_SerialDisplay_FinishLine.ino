@@ -18,6 +18,8 @@
 #include <SPI.h>
 #include <Wire.h>
 
+#include <ezButton.h>
+
 long startTimeMillis;
 bool gateOpen = true;
 
@@ -36,7 +38,13 @@ bool gateOpen = true;
 int laneStatus[LANES];
 long elapsedTime[LANES];
 int breakBeamPin[LANES] = {4, 5};
+int finishLineLED[LANES] = {9, 10};
+int readyLED = 12;
 bool scoresReported = false;
+bool allFinished = false;
+bool allAtGate = false;
+bool commEstablished = false;
+ezButton resetSwitch(13);
 
 /* Classes */
 
@@ -66,16 +74,27 @@ public:
     char *buffer = (char*)data;
 
     if (strcmp(buffer, "START_GATE_OPENED") == 0) {
+      digitalWrite(readyLED, LOW);
       startTimeMillis = millis();
       gateOpen = true;
       scoresReported = false;
       for (int i=0 ; i < LANES ; i++) {
         laneStatus[i] = RACING;
+        digitalWrite(finishLineLED[i], LOW);
       }
       Serial.println("race START");
     } else if (strcmp(buffer, "START_GATE_CLOSED") == 0) {
-      // this must be true to start the race
       gateOpen = false;
+      if (allFinished) {
+        for (int i=0 ; i < LANES ; i++) {
+          digitalWrite(finishLineLED[i], LOW);
+          laneStatus[i] = AT_GATE;
+        }
+        digitalWrite(readyLED, HIGH);
+      }
+      if (allAtGate) {
+        digitalWrite(readyLED, HIGH);
+      }
     }
   }
 };
@@ -92,7 +111,7 @@ void register_new_master(const esp_now_recv_info_t *info, const uint8_t *data, i
   if (memcmp(info->des_addr, ESP_NOW.BROADCAST_ADDR, 6) == 0) {
     Serial.printf("Unknown peer " MACSTR " sent a broadcast message\n", MAC2STR(info->src_addr));
     Serial.println("Registering the peer as a master");
-
+    commEstablished = true;
     ESP_NOW_Peer_Class new_master(info->src_addr, ESPNOW_WIFI_CHANNEL, WIFI_IF_STA, NULL);
 
     masters.push_back(new_master);
@@ -166,7 +185,11 @@ String getDefaultMacAddress() {
 
   for (int i=0 ; i < LANES ; i++) {
     laneStatus[i] = AT_GATE;
+    pinMode(finishLineLED[i], OUTPUT);
+    digitalWrite(finishLineLED[i], LOW);
   }
+  pinMode(readyLED, OUTPUT);
+  resetSwitch.setDebounceTime(50);
 }
 
 void loop() {
@@ -179,11 +202,23 @@ void loop() {
       elapsedTime[i] = now - startTimeMillis;
       // Serial.print("Time: "); Serial.println(elapsedTime[i] / 1000.0);
       // Serial.println();
+      digitalWrite(finishLineLED[i], HIGH);
     }
   }
 
+  resetSwitch.loop();
+  if ((resetSwitch.isPressed()) && (commEstablished)) {
+    digitalWrite(readyLED, HIGH);
+    for (int i=0 ; i < LANES ; i++) {
+      digitalWrite(finishLineLED[i], LOW);
+      laneStatus[i] = AT_GATE;
+    }
+    digitalWrite(readyLED, HIGH);
+  }
+
+
   // check to see if all cars crossed the finish line
-  bool allFinished = false;
+  allFinished = false;
   int finishedLanes = 0;
   for (int i=0 ; i < LANES ; i++) {
     if (laneStatus[i] == FINISHED) {
@@ -192,6 +227,17 @@ void loop() {
   }
   if (finishedLanes == LANES) { // all lanes are in FINISHED state
     allFinished = true;
+  }
+
+  allAtGate = false;
+  int atGateLanes = 0;
+  for (int i=0 ; i < LANES ; i++) {
+    if (laneStatus[i] == AT_GATE) {
+      atGateLanes++;
+    }
+  }
+  if (atGateLanes == LANES) { // all lanes are in FINISHED state
+    allAtGate = true;
   }
 
   if ((allFinished) && (scoresReported == false)) { // report scores
