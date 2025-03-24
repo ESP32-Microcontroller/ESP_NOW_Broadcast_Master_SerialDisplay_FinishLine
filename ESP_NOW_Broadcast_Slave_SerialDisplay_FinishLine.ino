@@ -37,7 +37,7 @@ bool gateOpen = true;
 
 int laneStatus[LANES];
 long elapsedTime[LANES];
-int breakBeamPin[LANES] = {4, 5};
+int breakBeamPin[LANES] = {6, 7};
 int finishLineLED[LANES] = {9, 10};
 int readyLED = 12;
 bool scoresReported = false;
