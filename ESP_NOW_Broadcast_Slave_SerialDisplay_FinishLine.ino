@@ -39,12 +39,12 @@ int laneStatus[LANES];
 long elapsedTime[LANES];
 int breakBeamPin[LANES] = {6, 7};
 int finishLineLED[LANES] = {9, 10};
-int readyLED = 12;
+int readyLED = 11;
 bool scoresReported = false;
 bool allFinished = false;
 bool allAtGate = false;
 bool commEstablished = false;
-ezButton resetSwitch(13);
+ezButton resetSwitch(3);
 
 /* Classes */
 
